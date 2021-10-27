@@ -48,9 +48,14 @@ fn main() {
         raw_min_R, raw_max_R, raw_min_G, raw_max_G, raw_min_B, raw_max_B
     );
     let raw_min_min = raw_min_R.min(raw_min_G).min(raw_min_B);
+    let better_raw_min_min = -f32::from_bits((-raw_min_min).to_bits() + 2);
     let raw_max_max = raw_max_R.max(raw_max_G).max(raw_max_B);
-    let to_add_xyz = iluminant_D65_XYZ * (-raw_min_min);
-    let to_mul = 1.0 / (raw_max_max - raw_min_min);
+    let to_add_xyz = iluminant_D65_XYZ * (-better_raw_min_min);
+    let to_mul = 1.0 / (raw_max_max - better_raw_min_min);
+    println!(
+        "\n{} {} {} {}\n{:?}\n",
+        raw_min_min, better_raw_min_min, raw_max_max, to_mul, to_add_xyz
+    );
     let stat2 = min_max_vec3(
         wavelength_to_CIE_XYZ
             .iter()
