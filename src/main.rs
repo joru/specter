@@ -80,6 +80,26 @@ fn main() {
             buffer[idx + 2] = bg.2;
         }
     }
+    let rainbow_start_x = (image_width - wavelength_to_CIE_XYZ.len()) / 2;
+    let rainbow_start_y = 16;
+    let rainbow_height = 64;
+    for i in 0..wavelength_to_CIE_XYZ.len() {
+        let idx = (rainbow_start_x + i + rainbow_start_y * image_width) * 3;
+        let xyz = wavelength_to_CIE_XYZ[i];
+        let rgb = converter.to_bytes(xyz.0, xyz.1, xyz.2);
+        buffer[idx + 0] = rgb.0;
+        buffer[idx + 1] = rgb.1;
+        buffer[idx + 2] = rgb.2;
+    }
+    let rainbow_copy_src_start = (rainbow_start_y * image_width + rainbow_start_x) * 3;
+    let rainbow_copy_len = wavelength_to_CIE_XYZ.len() * 3;
+    for y in 1..rainbow_height {
+        let rainbow_copy_dst_start = ((rainbow_start_y + y) * image_width + rainbow_start_x) * 3;
+        buffer.copy_within(
+            rainbow_copy_src_start..(rainbow_copy_src_start + rainbow_copy_len),
+            rainbow_copy_dst_start,
+        );
+    }
 
     println!("Saving...");
     image::save_buffer(
