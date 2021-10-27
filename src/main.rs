@@ -30,13 +30,13 @@ fn main() {
         "CIE XYZ->sRGB->CIE XYZ:{:#?}",
         sRGB_to_CIE_XYZ * CIE_XYZ_to_sRGB
     );
-    let iluminant_E_XYZ = Vec3::new(1.0, 1.0, 1.0);
-    let iluminant_D65_sRGB = Vec3::new(1.0, 1.0, 1.0);
-    let iluminant_E_sRGB = CIE_XYZ_to_sRGB * iluminant_E_XYZ;
-    let iluminant_D65_XYZ = sRGB_to_CIE_XYZ * iluminant_D65_sRGB;
+    let illuminant_E_XYZ = Vec3::new(1.0, 1.0, 1.0);
+    let illuminant_D65_sRGB = Vec3::new(1.0, 1.0, 1.0);
+    let illuminant_E_sRGB = CIE_XYZ_to_sRGB * illuminant_E_XYZ;
+    let illuminant_D65_XYZ = sRGB_to_CIE_XYZ * illuminant_D65_sRGB;
     println!(
         "E_sRGB:{:?}, D65_XYZ:{:?}",
-        iluminant_E_sRGB, iluminant_D65_XYZ
+        illuminant_E_sRGB, illuminant_D65_XYZ
     );
     let (raw_min_R, raw_max_R, raw_min_G, raw_max_G, raw_min_B, raw_max_B) = min_max_vec3(
         wavelength_to_CIE_XYZ
@@ -50,7 +50,7 @@ fn main() {
     let raw_min_min = raw_min_R.min(raw_min_G).min(raw_min_B);
     let better_raw_min_min = -f32::from_bits((-raw_min_min).to_bits() + 2);
     let raw_max_max = raw_max_R.max(raw_max_G).max(raw_max_B);
-    let to_add_xyz = iluminant_D65_XYZ * (-better_raw_min_min);
+    let to_add_xyz = illuminant_D65_XYZ * (-better_raw_min_min);
     let to_mul = 1.0 / (raw_max_max - better_raw_min_min);
     let converter = Converter {
         mul: to_mul,
@@ -66,8 +66,8 @@ fn main() {
             .map(|&(X, Y, Z)| converter.convert(X, Y, Z)),
     );
     println!("{:#?}", stat2);
-    let image_width = 640;
-    let image_height = 360;
+    let image_width = (wavelength_to_CIE_XYZ.len() + 15) / 16 * 16;
+    let image_height = image_width * 9 / 16;
     let mut buffer = vec![0u8; image_width * image_height * 3];
     let path = format!("out/out.png");
     println!("{}", path);
@@ -98,6 +98,77 @@ fn main() {
         buffer.copy_within(
             rainbow_copy_src_start..(rainbow_copy_src_start + rainbow_copy_len),
             rainbow_copy_dst_start,
+        );
+    }
+    let illuminant_bar_height = 16;
+    let illuminant_bar_start_y = rainbow_start_y + rainbow_height;
+    let rainbow_sum = wavelength_to_CIE_XYZ
+        .iter()
+        .fold((0.0, 0.0, 0.0), |(a, b, c), (d, e, f)| {
+            (a + d, b + e, c + f)
+        });
+    let rainbow_avg = (
+        rainbow_sum.0 / wavelength_to_CIE_XYZ.len() as f32,
+        rainbow_sum.1 / wavelength_to_CIE_XYZ.len() as f32,
+        rainbow_sum.2 / wavelength_to_CIE_XYZ.len() as f32,
+    );
+    println!("{:?} {:?}", rainbow_sum, rainbow_avg);
+    let illuminant_bytes = converter.to_bytes(rainbow_avg.0, rainbow_avg.1, rainbow_avg.2);
+    for y in 0..illuminant_bar_height {
+        for x in 0..wavelength_to_CIE_XYZ.len() {
+            let idx = ((illuminant_bar_start_y + y) * image_width + rainbow_start_x + x) * 3;
+            buffer[idx + 0] = illuminant_bytes.0;
+            buffer[idx + 1] = illuminant_bytes.1;
+            buffer[idx + 2] = illuminant_bytes.2;
+        }
+    }
+    let bright_bar_height = 4;
+    let bright_bar_start_y = rainbow_start_y + (rainbow_height - bright_bar_height) / 2;
+    let bright_bar_xyz = (
+        rainbow_avg.0 / rainbow_avg.1,
+        1.0,
+        rainbow_avg.2 / rainbow_avg.1,
+    );
+    let bright_bar_bytes = converter.to_bytes(bright_bar_xyz.0, bright_bar_xyz.1, bright_bar_xyz.2);
+    for y in 0..bright_bar_height {
+        for x in 0..wavelength_to_CIE_XYZ.len() {
+            let idx = ((bright_bar_start_y + y) * image_width + rainbow_start_x + x) * 3;
+            buffer[idx + 0] = bright_bar_bytes.0;
+            buffer[idx + 1] = bright_bar_bytes.1;
+            buffer[idx + 2] = bright_bar_bytes.2;
+        }
+    }
+    let patches_sRGB = [
+        Vec3::new(0f32, 0f32, 1f32),
+        Vec3::new(0f32, 1f32, 1f32),
+        Vec3::new(0f32, 1f32, 0f32),
+        Vec3::new(1f32, 1f32, 0f32),
+        Vec3::new(1f32, 0f32, 0f32),
+        Vec3::new(1f32, 0f32, 1f32),
+        Vec3::new(1f32, 1f32, 1f32),
+    ];
+    let patch_width = wavelength_to_CIE_XYZ.len() / (patches_sRGB.len() + 1);
+    let patches_start_x =
+        (wavelength_to_CIE_XYZ.len() - patches_sRGB.len() * patch_width) / 2 + rainbow_start_x;
+    let patches_start_y = illuminant_bar_start_y + illuminant_bar_height + 8;
+    let patch_height = 64;
+    let patches_start_idx = (patches_start_y * image_width + patches_start_x) * 3;
+    for i in 0..patches_sRGB.len() {
+        let patch_xyz = sRGB_to_CIE_XYZ * patches_sRGB[i];
+        let patch_bytes = converter.to_bytes(patch_xyz.X(), patch_xyz.Y(), patch_xyz.Z());
+        for x in 0..patch_width {
+            let idx = (i * patch_width + x) * 3 + patches_start_idx;
+            buffer[idx + 0] = patch_bytes.0;
+            buffer[idx + 1] = patch_bytes.1;
+            buffer[idx + 2] = patch_bytes.2;
+        }
+    }
+    let patches_line_byte_count = patches_sRGB.len() * patch_width * 3;
+    let patches_src_line_end_idx = patches_start_idx + patches_line_byte_count;
+    for y in 1..patch_height {
+        buffer.copy_within(
+            patches_start_idx..patches_src_line_end_idx,
+            patches_start_idx + y * image_width * 3,
         );
     }
 
