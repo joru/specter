@@ -52,6 +52,10 @@ fn main() {
     let raw_max_max = raw_max_R.max(raw_max_G).max(raw_max_B);
     let to_add_xyz = iluminant_D65_XYZ * (-better_raw_min_min);
     let to_mul = 1.0 / (raw_max_max - better_raw_min_min);
+    let converter = Converter {
+        mul: to_mul,
+        add: to_add_xyz,
+    };
     println!(
         "\n{} {} {} {}\n{:?}\n",
         raw_min_min, better_raw_min_min, raw_max_max, to_mul, to_add_xyz
@@ -59,9 +63,56 @@ fn main() {
     let stat2 = min_max_vec3(
         wavelength_to_CIE_XYZ
             .iter()
-            .map(|&(X, Y, Z)| CIE_XYZ_to_sRGB * ((Vec3::new(X, Y, Z) + to_add_xyz) * to_mul)),
+            .map(|&(X, Y, Z)| converter.convert(X, Y, Z)),
     );
     println!("{:#?}", stat2);
+    let image_width = 640;
+    let image_height = 360;
+    let mut buffer = vec![0u8; image_width * image_height * 3];
+    let path = format!("out/out.png");
+    println!("{}", path);
+    let bg = converter.to_bytes(0.0, 0.0, 0.0);
+    for y in 0..image_height {
+        for x in 0..image_width {
+            let idx = (y * image_width + x) * 3;
+            buffer[idx + 0] = bg.0;
+            buffer[idx + 1] = bg.1;
+            buffer[idx + 2] = bg.2;
+        }
+    }
+
+    println!("Saving...");
+    image::save_buffer(
+        path,
+        &buffer,
+        image_width as u32,
+        image_height as u32,
+        image::ColorType::Rgb8,
+    )
+    .expect("error saving image");
+    println!("Done.")
+}
+#[derive(Debug)]
+struct Converter {
+    pub mul: f32,
+    pub add: Vec3,
+}
+
+impl Converter {
+    pub fn convert(&self, X: f32, Y: f32, Z: f32) -> Vec3 {
+        CIE_XYZ_to_sRGB * ((Vec3::new(X, Y, Z) + self.add) * self.mul)
+    }
+    pub fn to_bytes(&self, X: f32, Y: f32, Z: f32) -> (u8, u8, u8) {
+        let sRGBf = self.convert(X, Y, Z);
+        (
+            Self::to_byte(sRGBf.X()),
+            Self::to_byte(sRGBf.Y()),
+            Self::to_byte(sRGBf.Z()),
+        )
+    }
+    fn to_byte(f: f32) -> u8 {
+        ((f.powf(1f32 / 2.2) * 255.99) as i32).clamp(0, 255) as u8
+    }
 }
 
 fn min_max_vec3(raw_sRGBs: impl Iterator<Item = Vec3>) -> (f32, f32, f32, f32, f32, f32) {
