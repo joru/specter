@@ -1,6 +1,6 @@
 #![allow(non_upper_case_globals)]
 pub const min_wavelenght:usize=380;
-pub const CIE_XYZ:&[(f32,f32,f32)]=&[
+pub const wavelength_to_CIE_XYZ:&[(f32,f32,f32)]=&[
     (0.0014,	0.0000,	0.0065),
     (0.0015,	0.0000,	0.0070),
     (0.0016,	0.0000,	0.0077),
